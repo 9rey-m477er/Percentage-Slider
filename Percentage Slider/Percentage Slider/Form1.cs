@@ -37,7 +37,7 @@ namespace Percentage_Slider
             nudCurrentValue.Name = "nudCurrentValue";
             nudCurrentValue.Location = new System.Drawing.Point(200, 17);
             nudCurrentValue.Width = 80;
-            nudCurrentValue.Minimum = 1;
+            nudCurrentValue.Minimum = 0;
             nudCurrentValue.Maximum = nudMaxValue.Value;
             nudCurrentValue.Value = 100;
             nudCurrentValue.ValueChanged += InputChanged;
