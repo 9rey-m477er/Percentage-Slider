@@ -1,108 +1,255 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.IO;
+using System.Text.Json;
 using System.Windows.Forms;
 
 namespace Percentage_Slider
 {
     public partial class Form1 : Form
     {
+        private Panel scrollPanel;
+        private Button btnAdd;
+        private Button btnSave;
+        private const string SaveFile = "sliders.json";
+
         public Form1()
         {
             InitializeComponent();
-            SetupControls();
+            SetupForm();
+            LoadFromFile();
         }
 
-        private void SetupControls()
+        // ── Layout ────────────────────────────────────────────────────────────
+
+        private void SetupForm()
         {
-            this.Text = "Slider Percentage";
-            this.Size = new System.Drawing.Size(400, 220);
+            this.Text = "Slider Manager";
+            this.Size = new Size(540, 500);
+            this.MinimumSize = new Size(540, 300);
 
-            // "Max Value" label
-            Label lblMaxValue = new Label();
-            lblMaxValue.Text = "Max Value:";
-            lblMaxValue.Location = new System.Drawing.Point(20, 20);
-            lblMaxValue.AutoSize = true;
+            var toolbar = new Panel();
+            toolbar.Dock = DockStyle.Top;
+            toolbar.Height = 45;
+            toolbar.Padding = new Padding(8, 8, 8, 0);
 
-            // NumericUpDown for max value input
-            NumericUpDown nudMaxValue = new NumericUpDown();
-            nudMaxValue.Name = "nudMaxValue";
-            nudMaxValue.Location = new System.Drawing.Point(100, 17);
-            nudMaxValue.Width = 80;
-            nudMaxValue.Minimum = 1;
-            nudMaxValue.Maximum = 10000;
-            nudMaxValue.Value = 100;
-            nudMaxValue.ValueChanged += InputChanged;
+            btnAdd = new Button();
+            btnAdd.Text = "＋ Add Slider";
+            btnAdd.Width = 110;
+            btnAdd.Height = 30;
+            btnAdd.Location = new Point(8, 8);
+            btnAdd.Click += (s, e) => AddSliderEntry("", 100, 0);
 
-            // NumericUpDown for current value input
-            NumericUpDown nudCurrentValue = new NumericUpDown();
-            nudCurrentValue.Name = "nudCurrentValue";
-            nudCurrentValue.Location = new System.Drawing.Point(200, 17);
-            nudCurrentValue.Width = 80;
-            nudCurrentValue.Minimum = 0;
-            nudCurrentValue.Maximum = nudMaxValue.Value;
-            nudCurrentValue.Value = 100;
-            nudCurrentValue.ValueChanged += InputChanged;
+            btnSave = new Button();
+            btnSave.Text = "💾 Save";
+            btnSave.Width = 80;
+            btnSave.Height = 30;
+            btnSave.Location = new Point(126, 8);
+            btnSave.Click += (s, e) => SaveToFile();
 
-            // TrackBar (slider)
-            TrackBar trackBar = new TrackBar();
-            trackBar.Name = "trackBar1";
-            trackBar.Location = new System.Drawing.Point(20, 60);
-            trackBar.Width = 340;
+            toolbar.Controls.Add(btnAdd);
+            toolbar.Controls.Add(btnSave);
+
+            scrollPanel = new Panel();
+            scrollPanel.Dock = DockStyle.Fill;
+            scrollPanel.AutoScroll = true;
+            scrollPanel.Padding = new Padding(8);
+
+            this.Controls.Add(scrollPanel);
+            this.Controls.Add(toolbar);
+        }
+
+        // ── Slider Entry ──────────────────────────────────────────────────────
+
+        private void AddSliderEntry(string name, int max, int current)
+        {
+            var entry = new Panel();
+            entry.Width = scrollPanel.ClientSize.Width - 20;
+            entry.Height = 110;
+            entry.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
+            entry.BorderStyle = BorderStyle.FixedSingle;
+            entry.Margin = new Padding(0, 0, 0, 8);
+
+            // Row 1: Name, Max Value, Remove button
+            var lblName = new Label() { Text = "Name:", Location = new Point(8, 10), AutoSize = true };
+
+            var txtName = new TextBox();
+            txtName.Name = "txtName";
+            txtName.Text = name;
+            txtName.Location = new Point(55, 7);
+            txtName.Width = 140;
+
+            var lblMax = new Label() { Text = "Max:", Location = new Point(210, 10), AutoSize = true };
+
+            var nudMax = new NumericUpDown();
+            nudMax.Name = "nudMax";
+            nudMax.Location = new Point(240, 7);
+            nudMax.Width = 70;
+            nudMax.Minimum = 1;
+            nudMax.Maximum = 100000;
+            nudMax.Value = Math.Max(1, max);
+
+            var btnRemove = new Button();
+            btnRemove.Text = "✕";
+            btnRemove.Width = 30;
+            btnRemove.Height = 24;
+            btnRemove.Location = new Point(entry.Width - 40, 6);
+            btnRemove.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnRemove.Click += (s, e) =>
+            {
+                scrollPanel.Controls.Remove(entry);
+                ReflowEntries();
+            };
+
+            // Row 2: Slider
+            var trackBar = new TrackBar();
+            trackBar.Name = "trackBar";
+            trackBar.Location = new Point(8, 35);
+            trackBar.Width = entry.Width - 20;
+            trackBar.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
             trackBar.Minimum = 0;
-            trackBar.Maximum = (int)nudMaxValue.Value;
-            trackBar.TickFrequency = 10;
-            trackBar.ValueChanged += InputChanged;
+            trackBar.Maximum = (int)nudMax.Value;
+            trackBar.Value = Math.Min(current, (int)nudMax.Value);
+            trackBar.TickFrequency = Math.Max(1, (int)nudMax.Value / 10);
 
-            // Percentage display label
-            Label lblPercentage = new Label();
-            lblPercentage.Name = "lblPercentage";
-            lblPercentage.Text = "0.00%";
-            lblPercentage.Location = new System.Drawing.Point(20, 120);
-            lblPercentage.AutoSize = true;
-            lblPercentage.Font = new System.Drawing.Font("Segoe UI", 24, System.Drawing.FontStyle.Bold);
+            // Row 3: Current value NUD and percentage label
+            var lblCurrent = new Label() { Text = "Value:", Location = new Point(8, 78), AutoSize = true };
 
-            this.Controls.Add(lblMaxValue);
-            this.Controls.Add(nudMaxValue);
-            this.Controls.Add(trackBar);
-            this.Controls.Add(lblPercentage);
-            this.Controls.Add(nudCurrentValue);
-        }
+            var nudCurrent = new NumericUpDown();
+            nudCurrent.Name = "nudCurrent";
+            nudCurrent.Location = new Point(55, 75);
+            nudCurrent.Width = 70;
+            nudCurrent.Minimum = 0;
+            nudCurrent.Maximum = nudMax.Value;
+            nudCurrent.Value = Math.Min(current, (int)nudMax.Value);
 
-        private void InputChanged(object sender, EventArgs e)
-        {
-            var nudMaxValue = (NumericUpDown)this.Controls["nudMaxValue"];
-            var nudCurrentValue = (NumericUpDown)this.Controls["nudCurrentValue"];
-            var trackBar = (TrackBar)this.Controls["trackBar1"];
-            var lblPercentage = (Label)this.Controls["lblPercentage"];
+            var lblPercent = new Label();
+            lblPercent.Name = "lblPercent";
+            lblPercent.Location = new Point(140, 78);
+            lblPercent.AutoSize = true;
+            lblPercent.Font = new Font("Segoe UI", 11, FontStyle.Bold);
+            lblPercent.Text = FormatPercent(current, (int)nudMax.Value);
 
-            int maxVal = (int)nudMaxValue.Value;
+            // ── Event wiring ──────────────────────────────────────────────────
 
-            // Keep slider max in sync with the max value input
-            if (trackBar.Maximum != maxVal)
+            nudMax.ValueChanged += (s, e) =>
             {
+                int maxVal = (int)nudMax.Value;
                 trackBar.Maximum = maxVal;
-                if (trackBar.Value > maxVal)
-                    trackBar.Value = maxVal;
-            }
+                trackBar.TickFrequency = Math.Max(1, maxVal / 10);
+                nudCurrent.Maximum = maxVal;
+                if (nudCurrent.Value > maxVal) nudCurrent.Value = maxVal;
+                if (trackBar.Value > maxVal) trackBar.Value = maxVal;
+                lblPercent.Text = FormatPercent((int)nudCurrent.Value, maxVal);
+            };
 
-            // Keep nudCurrentValue max in sync too
-            nudCurrentValue.Maximum = maxVal;
-
-            // Sync slider and nudCurrentValue without infinite loops
-            if (sender == trackBar)
+            trackBar.ValueChanged += (s, e) =>
             {
-                nudCurrentValue.ValueChanged -= InputChanged;
-                nudCurrentValue.Value = Math.Min(trackBar.Value, nudCurrentValue.Maximum);
-                nudCurrentValue.ValueChanged += InputChanged;
-            }
-            else if (sender == nudCurrentValue)
+                nudCurrent.ValueChanged -= NudCurrentChanged;
+                nudCurrent.Value = trackBar.Value;
+                nudCurrent.ValueChanged += NudCurrentChanged;
+                lblPercent.Text = FormatPercent(trackBar.Value, (int)nudMax.Value);
+            };
+
+            nudCurrent.ValueChanged += NudCurrentChanged;
+
+            void NudCurrentChanged(object s, EventArgs e)
             {
-                trackBar.ValueChanged -= InputChanged;
-                trackBar.Value = Math.Min((int)nudCurrentValue.Value, trackBar.Maximum);
-                trackBar.ValueChanged += InputChanged;
+                trackBar.ValueChanged -= TrackBarChanged;
+                trackBar.Value = Math.Min((int)nudCurrent.Value, trackBar.Maximum);
+                trackBar.ValueChanged += TrackBarChanged;
+                lblPercent.Text = FormatPercent((int)nudCurrent.Value, (int)nudMax.Value);
             }
 
-            double percentage = maxVal > 0 ? (double)trackBar.Value / maxVal * 100.0 : 0;
-            lblPercentage.Text = $"{percentage:F2}%";
+            void TrackBarChanged(object s, EventArgs e)
+            {
+                nudCurrent.ValueChanged -= NudCurrentChanged;
+                nudCurrent.Value = trackBar.Value;
+                nudCurrent.ValueChanged += NudCurrentChanged;
+                lblPercent.Text = FormatPercent(trackBar.Value, (int)nudMax.Value);
+            }
+
+            entry.Controls.AddRange(new Control[]
+            {
+                lblName, txtName, lblMax, nudMax, btnRemove,
+                trackBar,
+                lblCurrent, nudCurrent, lblPercent
+            });
+
+            scrollPanel.Controls.Add(entry);
+            ReflowEntries();
         }
+
+        private void ReflowEntries()
+        {
+            int y = 8;
+            foreach (Control c in scrollPanel.Controls)
+            {
+                c.Top = y;
+                c.Width = scrollPanel.ClientSize.Width - 20;
+                y += c.Height + 8;
+            }
+        }
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+
+        private string FormatPercent(int value, int max) =>
+            max > 0 ? $"{(double)value / max * 100:F2}%" : "0.00%";
+
+        // ── Save / Load ───────────────────────────────────────────────────────
+
+        private void SaveToFile()
+        {
+            var entries = new List<SliderData>();
+
+            foreach (Control c in scrollPanel.Controls)
+            {
+                if (c is not Panel entry) continue;
+
+                var txtName = entry.Controls["txtName"] as TextBox;
+                var nudMax = entry.Controls["nudMax"] as NumericUpDown;
+                var nudCurrent = entry.Controls["nudCurrent"] as NumericUpDown;
+
+                entries.Add(new SliderData
+                {
+                    Name = txtName?.Text ?? "",
+                    Max = (int)(nudMax?.Value ?? 100),
+                    Current = (int)(nudCurrent?.Value ?? 0)
+                });
+            }
+
+            var json = JsonSerializer.Serialize(entries, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(SaveFile, json);
+            MessageBox.Show("Saved!", "Slider Manager", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        private void LoadFromFile()
+        {
+            if (!File.Exists(SaveFile)) return;
+
+            try
+            {
+                var json = File.ReadAllText(SaveFile);
+                var entries = JsonSerializer.Deserialize<List<SliderData>>(json);
+                if (entries == null) return;
+
+                foreach (var entry in entries)
+                    AddSliderEntry(entry.Name, entry.Max, entry.Current);
+            }
+            catch
+            {
+                MessageBox.Show("Could not load save file.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+    }
+
+    // ── Data model ────────────────────────────────────────────────────────────
+
+    public class SliderData
+    {
+        public string Name { get; set; } = "";
+        public int Max { get; set; } = 100;
+        public int Current { get; set; } = 0;
     }
 }
